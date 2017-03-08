@@ -8,11 +8,14 @@ export default class WeiboInfo {
         let Schema = mongoose.Schema;
         this.WeiboInfo = new Schema({
             uid : Number,
-            mid : Number,
+            mid : String,
             created_time : Date,
             source : String,
             text : String,
-            geo: Object
+            geo: Object,
+            provinceId : Number,
+            areaId : Number,
+            cityId : Number
         });
     }
 
