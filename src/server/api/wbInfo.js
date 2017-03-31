@@ -15,8 +15,20 @@ router.get('/china', function (req, res) {
     });
 });
 
+router.get('/province/pos/:id', function (req, res) {
+    weibo.findPositionByProvince(req.params.id, (doc)=>{
+        res.json(doc);
+    });
+});
+
 router.get('/province/:id', function (req, res) {
     weibo.findCountByCity(req.params.id, (doc)=>{
+        res.json(doc);
+    });
+});
+
+router.get('/province/detail/:id', function (req, res) {
+    weibo.findDetailByProvince(req.params.id, (doc)=>{
         res.json(doc);
     });
 });
@@ -35,6 +47,18 @@ router.get('/uid/:uid', function (req, res) {
 
 router.get('/time/:time', function (req, res) {
     weibo.findByDate(req.params.time, (doc)=>{
+        res.json(doc);
+    });
+});
+
+router.get('/china/time', function (req, res) {
+    weibo.findCountByTime((doc)=>{
+        res.json(doc);
+    });
+});
+
+router.get('/china/time/:id', function (req, res) {
+    weibo.findCountByProvinceTime(req.params.id, (doc)=>{
         res.json(doc);
     });
 });

@@ -6,22 +6,25 @@ import React, { Component } from 'react';
 import L from 'leaflet'
 import * as d3 from 'd3'
 import 'whatwg-fetch'
+import {connect} from 'react-redux'
 
 let proxy = "http://localhost:3001";
 
-export default class Map extends Component {
-    constructor(){
-        super();
+class Map extends Component {
+    constructor(props){
+        super(props);
+        let common = props.common;
+        this.selectedProvince = common.selectedProvince;
+        this.selectedCity = common.selectedCity;
+        this.currentMapLevel = common.currentMapLevel; //0 为国家，1为省，2为市
+
         this.map = {};
-        this.selectedProvince = -1;
-        this.selectedArea = -1;
-        this.currentMapLevel = 0; //0 为国家，1为省，2为市
         this.color = d3.scaleOrdinal(d3.schemeCategory20);
 
         //dataStore
-        this.chinaStore = {};
         this.provinceStore = {};
         this.cityStore = {};
+        this.areaStore = {};
         this.grades = [0, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
         //layer
@@ -30,35 +33,75 @@ export default class Map extends Component {
         this.legendPanel = L.control({position: 'bottomright'});
         //bind function
         this._addZoomListener.bind(this);
-        this._highlightFeature.bind(this);
+        this._featureMouseOver.bind(this);
         this._onEachFeature.bind(this);
-        this._resetHighlight.bind(this);
-        this._zoomToFeature.bind(this);
+        this._featureMouseOut.bind(this);
+        this._featureClick.bind(this);
     }
 
     componentDidMount(){
         this.init();
     }
 
+    componentDidUpdate(){
+        console.log(this.props);
+    }
+
     init(){
-        this.readGeoJson('./china/china.json');
         this.map = L.map('mapid',{
             maxZoom: 13,
             minZoom: 4,
         }).setView([31.27091, 121.40081], 4);
+        L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw', {
+            id: 'mapbox.dark'
+        }).addTo(this.map);
 
-        let southWest = L.latLng(15, 60),
-            northEast = L.latLng(60, 138),
+        this.readGeoJson('./china/china.json');
+        let southWest = L.latLng(25, 70),
+            northEast = L.latLng(50, 138),
             bounds = L.latLngBounds(southWest, northEast);
         this.map.setMaxBounds(bounds);
         this.addInfoPanel();
         this.addLegend();
         this._addZoomListener();
+        // let url = proxy;
+        // url += '/province/pos/31';
+        // fetch(url)
+        //     .then((response)=>{
+        //         return response.json()
+        //     }).then((json)=>{
+        //     for(let i = 0; i < 1000; ++i){
+        //         let item = json[i];
+        //         L.circle([item.geo.coordinates[1], item.geo.coordinates[0]], {
+        //             color: 'red',
+        //             fillColor: 'white',
+        //             fillOpacity: 0.5,
+        //             radius: 5
+        //         }).addTo(this.map)
+        //     }
+        //     var svg = d3.select('svg');
+        //     svg.select('.pos')
+        //         .data(json.map((item)=>{
+        //             return item.geo.coordinates;
+        //         }))
+        //         .enter()
+        //         .append('rect')
+        //         .attr('class', 'Rect')
+        //         .attr('fill', 'deepskyblue')
+        //         .attr('x', function (d, i) {
+        //             return d[0];
+        //         })
+        //         .attr('width', 5)
+        //         .attr('y', function (d, i) {
+        //             return d[1];
+        //         })
+        //         .attr('height', 5);
+        //
+        // })
     }
 
     addInfoPanel() {
         let _this = this;
-        console.log(this.getDataStore(), this.currentMapLevel);
         this.infoPanel.onAdd = function (map) {
             this._div = L.DomUtil.create('div', 'info'); // create a div with a class "info"
             this.update();
@@ -93,13 +136,15 @@ export default class Map extends Component {
         this.legendPanel.addTo(this.map);
     }
 
-    _zoomToFeature(e) {
+    //进入下一层
+    _featureClick(e) {
         if (this.first) this.first = false;
         let target = e.target;
-        if (this.currentMapLevel === 0)
+        if (this.currentMapLevel === 0){
             this.selectedProvince = target.feature.properties.id;
+        }
         else if(this.currentMapLevel === 1){
-            this.selectedArea = target.feature.properties.id;
+            this.selectedCity = target.feature.properties.id;
         }
         //如果是china的层次,则进入下一层
         if(this.currentMapLevel === 0){
@@ -109,18 +154,98 @@ export default class Map extends Component {
             this.readGeoJson(`./china/geometryProvince/${this.selectedProvince}.json`);
         }//如果是province层次，且继续放大，则进入下一层
         else if (this.currentMapLevel === 1){
-            console.log('change to area : ' + this.selectedArea);
+            console.log('change to area : ' + this.selectedCity);
             this.currentMapLevel = 2;
             this.map.removeLayer(this.currentLayout);
-            this.readGeoJson(`./china/geometryCouties/${this.selectedArea.substr(0,4)}00.json`);
+            this.readGeoJson(`./china/geometryCouties/${this.selectedCity.substr(0,4)}00.json`);
         }
         this.map.fitBounds(target.getBounds());
-        console.log(target ,this.map.getZoom());
-        //this.map.setView(target.feature.properties.cp);
         if (this.map.getZoom() < 8){this.map.setZoom(9);}
     }
 
-    _highlightFeature(e) {
+    readGeoJson(fileName, callBack){
+        d3.json(fileName, (error, collection) => {
+            if (error) throw error;
+            if (callBack) callBack(collection);
+            else this.handleGeoJson(collection);
+        });
+    }
+
+    handleGeoJson(collection) {
+        let _this = this, item = this.getDetailData(), tmpJson;
+        //如果数据存在，无需查询
+        if (Map.isEmptyObject(item)){
+            //dataUrl
+            let url = proxy;
+            if (this.currentMapLevel === 0){
+                url += '/china';
+            }else if (this.currentMapLevel === 1){
+                url += `/province/${this.selectedProvince}`
+            }else{
+                url += `/city/${this.selectedCity}`
+            }
+            console.log(url);
+            fetch(url)
+                .then( (response) => {
+                    return response.json();
+                }).then((json)=>{
+                tmpJson = Map.handleJsonArrayToObject(json);
+                //存入props
+                this.props.updateDataStore(tmpJson, this.currentMapLevel);
+                //存入数据仓库
+                if (this.currentMapLevel === 0){
+                    _this.provinceStore = tmpJson;
+                }else if (this.currentMapLevel === 1){
+                    this.props.changeToProvince(this.selectedProvince);
+                    _this.cityStore[_this.selectedProvince] = tmpJson;
+                }else{
+                    this.props.changeToCity(this.selectedCity);
+                    _this.areaStore[_this.selectedCity] = tmpJson;
+                }
+                this.infoPanel.update();
+                this.currentLayout = L.geoJson(collection, {
+                    style: _this._style.bind(_this),
+                    onEachFeature: _this._onEachFeature.bind(_this)
+                });
+                this.currentLayout.addTo(this.map);
+            }).catch(function(ex) {
+                console.log('parsing failed', ex)
+            });
+        }else {//数据已存在
+            if (this.currentMapLevel === 1){
+                this.props.changeToProvince(this.selectedProvince);
+            }else if (this.currentMapLevel === 2){
+                this.props.changeToCity(this.selectedCity);
+            }
+            this.currentLayout = L.geoJson(collection, {
+                style: _this._style.bind(_this),
+                onEachFeature: _this._onEachFeature.bind(_this)
+            });
+            this.currentLayout.addTo(this.map);
+        }
+
+    }
+
+    _addZoomListener(){
+        this.map.on('zoom', (e)=>{
+            if (e.target.getZoom() > 6 && e.target.getZoom() < 8 && this.currentMapLevel === 2){
+                console.log(`change from area ${this.selectedCity} to province : ${this.selectedProvince}`);
+                this.currentMapLevel = 1; this.selectedCity = -1;
+                this.props.changeToProvince(this.selectedProvince, true);
+                this.map.removeLayer(this.currentLayout);
+                this.readGeoJson(`./china/geometryProvince/${this.selectedProvince}.json`);
+            }
+            else if(e.target.getZoom() < 5 && this.currentMapLevel === 1){
+                console.log(`change from ${this.selectedProvince} to china`);
+                this.currentMapLevel = 0; this.selectedProvince = -1;
+                this.props.changeToChina();
+                this.map.removeLayer(this.currentLayout);
+                this.readGeoJson(`./china/china.json`);
+            }
+        })
+    }
+
+    _featureMouseOver(e) {
         let layer = e.target;
 
         layer.setStyle({
@@ -135,7 +260,7 @@ export default class Map extends Component {
         }
     }
 
-    _resetHighlight(e) {
+    _featureMouseOut(e) {
         this.currentLayout.resetStyle(e.target);
         this.infoPanel.update();
     }
@@ -143,105 +268,18 @@ export default class Map extends Component {
     _onEachFeature(feature, layer) {
         let _this = this;
         layer.on({
-            mouseover: _this._highlightFeature.bind(_this),
-            mouseout: _this._resetHighlight.bind(_this),
-            click: _this._zoomToFeature.bind(_this)
+            mouseover: _this._featureMouseOver.bind(_this),
+            mouseout: _this._featureMouseOut.bind(_this),
+            click: _this._featureClick.bind(_this)
         });
-    }
-
-    readGeoJson(fileName, callBack){
-        d3.json(fileName, (error, collection) => {
-            if (error) throw error;
-            if (callBack) callBack(collection);
-            else this.handleGeoJson(collection);
-        });
-    }
-
-    handleJsonArrayToObject(json){
-        let obj = {};
-        for (let item of json){
-            obj[item._id] = item;
-        }
-        return obj
-    }
-
-    handleGeoJson(collection) {
-        let _this = this, item = this.getDetailData(), tmpJson;
-        //如果数据存在，无需查询
-        if (this.isEmptyObject(item)){
-            //dataUrl
-            let url = proxy;
-            if (this.currentMapLevel === 0){
-                url += '/china';
-            }else if (this.currentMapLevel === 1){
-                url += `/province/${this.selectedProvince}`
-            }else{
-                url += `/city/${this.selectedArea}`
-            }
-            console.log(url);
-            fetch(url)
-                .then( (response) => {
-                    return response.json();
-                }).then((json)=>{
-                tmpJson = this.handleJsonArrayToObject(json);
-                //存入数据仓库
-                if (this.currentMapLevel === 0){
-                    _this.chinaStore = tmpJson;
-                }else if (this.currentMapLevel === 1){
-                    _this.provinceStore[_this.selectedProvince] = tmpJson;
-                }else{
-                    _this.cityStore[_this.selectedArea] = tmpJson;
-                }
-                this.infoPanel.update();
-                this.currentLayout = L.geoJson(collection, {
-                    style: _this._style.bind(_this),
-                    onEachFeature: _this._onEachFeature.bind(_this)
-                });
-                this.currentLayout.addTo(this.map);
-                //console.log(_this.chinaStore,_this.provinceStore,_this.cityStore);
-            }).catch(function(ex) {
-                console.log('parsing failed', ex)
-            });
-        }else {//数据已存在
-            this.currentLayout = L.geoJson(collection, {
-                style: _this._style.bind(_this),
-                onEachFeature: _this._onEachFeature.bind(_this)
-            });
-            this.currentLayout.addTo(this.map);
-        }
-
-    }
-
-    _addZoomListener(){
-        this.map.on('zoom', (e)=>{
-            if (e.target.getZoom() > 6 && e.target.getZoom() < 8 && this.currentMapLevel === 2){
-                console.log(`change from area ${this.selectedArea} to province : ${this.selectedProvince}`);
-                this.currentMapLevel = 1;
-                this.map.removeLayer(this.currentLayout);
-                this.readGeoJson(`./china/geometryProvince/${this.selectedProvince}.json`);
-            }
-            else if(e.target.getZoom() < 5 && this.currentMapLevel === 1){
-                console.log(`change from ${this.selectedProvince} to china`);
-                this.currentMapLevel = 0;
-                let _this = this;
-                //移除监听
-                this.currentLayout.off({
-                    mouseover: _this._highlightFeature.bind(_this),
-                    mouseout: _this._resetHighlight.bind(_this),
-                    click: _this._zoomToFeature.bind(_this)
-                });
-                this.map.removeLayer(this.currentLayout);
-                this.readGeoJson(`./china/china.json`);
-            }
-        })
     }
 
     _style(feature) {
         let _this = this;
         return {
             fillColor: _this.getColor(feature),
-            weight: 2,
-            opacity: 1,
+            weight: 1,
+            opacity: 0.5,
             color: 'white',
             dashArray: '3',
             fillOpacity: 0.5
@@ -263,28 +301,58 @@ export default class Map extends Component {
         return this.color(i);
     }
 
-    render(){
-        return <div id="mapid"></div>;
-    }
-
     getDataStore(){
         switch (this.currentMapLevel){
-            case 0 : return this.chinaStore;
-            case 1 : return this.provinceStore;
-            case 2 : return this.cityStore;
+            case 0 : return this.provinceStore;
+            case 1 : return this.cityStore;
+            case 2 : return this.areaStore;
             default : return {};
         }
     }
-    
+
     getDetailData(){
         let dataJson = this.getDataStore();
-        return this.currentMapLevel === 0 ? dataJson : (this.currentMapLevel === 1 ? dataJson[this.selectedProvince] : dataJson[this.selectedArea]);
+        return this.currentMapLevel === 0 ? dataJson : (this.currentMapLevel === 1 ? dataJson[this.selectedProvince] : dataJson[this.selectedCity]);
     }
 
-    isEmptyObject(obj){
+    static isEmptyObject(obj){
         for (let i in obj)
             return false;
         return true;
     }
+
+    static handleJsonArrayToObject(json){
+        let obj = {};
+        for (let item of json){
+            obj[item._id] = item;
+        }
+        return obj
+    }
+
+    render(){
+        return <div id="mapid"></div>;
+    }
 }
 
+let mapStateToProps = (state)=>{
+    return {
+        common : {
+            selectedProvince : state.common.selectedProvince || -1,
+            selectedCity : state.common.selectedCity || -1,
+            currentMapLevel : state.common.currentMapLevel || 0, //0 为国家，1为省，2为市
+            dataStore: state.common.dataStore || {}
+        }
+    }
+};
+
+let mapDispatchToProps = (dispatch)=>{
+    return {
+        changeToProvince : (id, remove = false) => dispatch({type: "changeToProvince", payload: {id: id, removeId: remove}}),
+        changeToCity : (id, remove = false) => dispatch({type: "changeToCity", payload: {id: id, removeId: remove}}),
+        changeToChina : () => dispatch({type: "changeToChina"}),
+
+        updateDataStore : (json, level) => dispatch({type: "updateDataStore", payload:{data: json, level: level}})
+    }
+};
+
+export default connect(mapStateToProps, mapDispatchToProps)(Map);

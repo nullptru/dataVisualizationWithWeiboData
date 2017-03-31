@@ -110,6 +110,84 @@ export default class Weibo {
 
     }
 
+    findCountByTime(callback){
+        this.Info.aggregate({$group :
+            {
+                _id : { month: { $month: "$created_time" }, year: { $year: "$created_time" } },
+                count : {$sum : 1}
+            }}
+            ,{ $sort : { "_id.year" : 1,"_id.month" : 1 } }
+            ,{$project: {_id: 0, year: "$_id.year", month: "$_id.month", count: 1}}, function (err, res) {
+            if (err) throw err;
+            callback(res);
+        });
+
+    }
+
+    findCountByProvinceTime(search, callback){
+        let query;
+        if (search){
+            query = [{
+                $match: {
+                    provinceId : Number.parseInt(search)
+                }},
+                {
+                    $group : {
+                        _id : { month: { $month: "$created_time" }, year: { $year: "$created_time" } },
+                        count: { $sum: 1 }
+                    }
+                }
+                ,{ $sort : { "_id.year" : 1,"_id.month" : 1 } }
+                ,{$project: {_id: 0, year: "$_id.year", month: "$_id.month", count: 1}}
+            ]
+        }else {
+            query = [{$group :
+                {
+                    _id : { month: { $month: "$created_time" }, year: { $year: "$created_time" } },
+                    count : {$sum : 1}
+                }
+            }
+                ,{ $sort : { "_id.year" : 1,"_id.month" : 1 } }
+                ,{$project: {_id: 0, year: "$_id.year", month: "$_id.month", count: 1}}
+            ]
+        }
+        this.Info.aggregate(query, function (err, res) {
+            if (err) throw err;
+            callback(res);
+        });
+
+    }
+
+    findCountByArea(search, callback){
+        let query;
+        if (search){
+            query = [ {
+                $match: {
+                    cityId : Number.parseInt(search)
+                }},
+                {$group :
+                    {
+                        _id : "$areaId",
+                        count : {$sum : 1}
+                    }
+                }
+            ]
+        }else {
+            query = [{$group :
+                {
+                    _id : "$areaId",
+                    count : {$sum : 1}
+                }
+            }
+            ]
+        }
+        this.Info.aggregate(query, function (err, res) {
+            if (err) throw err;
+            callback(res);
+        });
+
+    }
+
     findByUser(uid, callback){
         let query = {
             $match : {
@@ -133,9 +211,26 @@ export default class Weibo {
             callback(res);
         })
     }
-}
 
-// let WeiboTest  = new Weibo();
-// WeiboTest.findCountByProvince();
-// WeiboTest.findCountByCity(37);
-// WeiboTest.findCountByArea(37);
+    findDetailByProvince(search, callback){
+        this.Info.aggregate({$match :
+            {
+                provinceId : Number.parseInt(search),
+            }},
+            {$project : {text: 1, mid: 1}}, function (err, res) {
+            if (err) throw err;
+                callback(res);
+        });
+    }
+
+    findPositionByProvince(search, callback){
+        this.Info.aggregate({$match :
+                {
+                    provinceId : Number.parseInt(search),
+                }},
+            {$project : {geo: 1, mid: 1}}, function (err, res) {
+                if (err) throw err;
+                callback(res);
+            });
+    }
+}

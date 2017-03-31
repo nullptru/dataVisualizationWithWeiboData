@@ -1,4 +1,4 @@
-city = {
+export default {
     "110000": [
         {
             "name": "市辖区",

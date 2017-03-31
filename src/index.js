@@ -1,9 +1,16 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import App from './map';
-import './style/index.css';
+import {Provider} from 'react-redux'
+import {createStore} from 'redux'
+
+import App from './App';
+import indexReducer from './reducer/indexReduce'
+
+let store = createStore(indexReducer);
 
 ReactDOM.render(
-  <App />,
+    <Provider store={store}>
+        <App/>
+    </Provider>,
   document.getElementById('root')
 );

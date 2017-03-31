@@ -1,4 +1,4 @@
-area = {
+export default {
     "110100": [
         {
             "id": "110101",
